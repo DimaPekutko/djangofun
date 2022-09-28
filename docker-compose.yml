@@ -1,0 +1,75 @@
+version: "3.8"
+services:
+  # django core app
+  core:
+    build: ./core
+    restart: on-failure
+    volumes:
+      - ./core:/app/core
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONUNBUFFERED: 1
+    command: /app/entrypoint.sh
+    tty: true
+    depends_on:
+      - db
+      - localstack
+      - celery_worker
+      - rabbitmq
+  # database
+  db:
+    image: postgres:11.1-alpine
+    restart: on-failure
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+  # localstack (for dev mode)
+  localstack:
+    image: localstack/localstack
+    restart: on-failure
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}
+      SERVICES: dynamodb
+    ports:
+      - "4566:4566"
+    volumes:
+      # on startup, localstack will run all sh scripts in docker-entrypoint-initaws.d folder
+      - './core/scripts/setup_localstack.sh:/docker-entrypoint-initaws.d/make-s3.sh'
+      # - './core/scripts/tabledef.json:/tabledef.json'
+      # - "${TMPDIR:-/tmp/localstack}:/tmp/localstack"
+      # - "/var/run/docker.sock:/var/run/docker.sock"
+  # microservice for statistic
+  stat_service:
+    build: ./stat
+    restart: on-failure
+    volumes:
+      - ./stat:/app/stat
+    ports:
+      - "7000:7000"
+    depends_on:
+      - localstack
+      - rabbitmq
+    environment:
+      STAT_SERVICE_PORT: ${STAT_SERVICE_PORT}
+      PYTHONUNBUFFERED: 1
+    command: /app/entrypoint.sh
+  # rabbitmq broker
+  rabbitmq:
+    image: rabbitmq:3.10-alpine
+    restart: on-failure
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+    ports:
+    - 5672:5672
+    - 15672:15672
+  # celery worker
+  # celery_worker:
+  #   build: ./core
+  #   restart: on-failure
+  #   command: bash /app/celery.sh
+    
